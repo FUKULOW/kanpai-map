@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KANPAI-MAP | どこで呑んでる？</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Bungee&family=Noto+Sans+JP:wght@400;700&display=swap');
+
+        :root {
+            --neon-pink: #ff00ff;
+            --neon-blue: #00f2ff;
+            --neon-yellow: #fff000;
+            --bg-dark: #0a0a0c;
+            --panel-bg: rgba(20, 20, 25, 0.98);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            scroll-behavior: smooth;
+        }
+
+        body {
+            background: var(--bg-dark);
+            color: #f0f0f0;
+            font-family: 'Noto Sans JP', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            overflow-x: hidden;
+            padding: 16px;
+        }
+
+        @keyframes neon-flicker {
+            0%, 19.999%, 22%, 62.999%, 64%, 64.999%, 70%, 100% {
+                opacity: 1;
+                text-shadow: 0 0 4px #fff, 0 0 11px #fff, 0 0 19px #fff, 0 0 40px var(--neon-pink), 0 0 80px var(--neon-pink);
+            }
+            20%, 21.999%, 63%, 63.999%, 65%, 69.999% {
+                opacity: 0.4;
+                text-shadow: none;
+            }
+        }
+
+        .main-wrap {
+            max-width: 440px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        header {
+            padding: 20px 0 8px;
+            text-align: center;
+        }
+
+        .neon-title {
+            font-family: 'Bungee', cursive;
+            font-size: 2.2rem;
+            color: #fff;
+            letter-spacing: 4px;
+            animation: neon-flicker 3s infinite;
+        }
+
+        .sub-title {
+            font-size: .75rem;
+            color: #888;
+            margin-top: 4px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .glass-panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 242, 255, 0.3);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .input-label {
+            color: var(--neon-blue);
+            font-size: .9rem;
+            font-weight: bold;
+            margin-bottom: 8px;
+            display: block;
+            text-shadow: 0 0 5px rgba(0, 242, 255, .5);
+        }
+
+        .input-neon {
+            background: rgba(0, 0, 0, .8);
+            border: 2px solid var(--neon-blue);
+            color: #fff;
+            border-radius: 12px;
+            padding: .9rem;
+            width: 100%;
+            outline: none;
+            font-size: 1rem;
+            transition: box-shadow 0.3s, border-color 0.3s;
+        }
+
+        .input-neon:focus {
+            box-shadow: 0 0 15px rgba(0, 242, 255, 0.6);
+            border-color: #fff;
+        }
+
+        .btn-kanpai {
+            background: linear-gradient(45deg, var(--neon-pink), #ff66ff);
+            color: #fff;
+            font-weight: bold;
+            border: none;
+            border-radius: 12px;
+            padding: 1rem;
+            width: 100%;
+            font-size: 1.2rem;
+            box-shadow: 0 0 20px rgba(255, 0, 255, .4);
+            cursor: pointer;
+            margin-top: 14px;
+            transition: transform .1s, filter 0.2s;
+        }
+
+        .btn-kanpai:active { transform: scale(.97); }
+        .btn-kanpai:hover { filter: brightness(1.1); }
+
+        #map-container {
+            scroll-margin-top: 20px;
+        }
+
+        #map {
+            height: 380px;
+            width: 100%;
+            border-radius: 16px;
+            background: #111;
+            z-index: 1;
+        }
+
+        /* 地図タイルのみフィルタ適用 */
+        .leaflet-tile-pane {
+            filter: invert(90%) hue-rotate(180deg) brightness(1.8) contrast(1.1) saturate(0.9);
+        }
+
+        @keyframes bounce {
+            from { transform: translateY(0) rotate(-5deg); }
+            to { transform: translateY(-8px) rotate(5deg); }
+        }
+
+        .inner-bounce {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2.8rem;
+            animation: bounce .6s infinite alternate;
+            filter: drop-shadow(0 0 8px rgba(255, 0, 255, 0.6));
+        }
+
+        /* アイコンと吹き出しはフィルタ除外 */
+        .leaflet-marker-pane, .leaflet-popup-pane {
+            filter: none !important;
+        }
+
+        .leaflet-popup-content-wrapper {
+            background: #fff !important;
+            color: #111 !important;
+            border: 3px solid var(--neon-pink) !important;
+            border-radius: 14px !important;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.4) !important;
+            font-weight: bold;
+        }
+
+        .leaflet-popup-tip {
+            background: #fff !important;
+        }
+
+        .status-msg {
+            text-align: center;
+            font-size: .85rem;
+            font-weight: bold;
+            min-height: 1.4rem;
+        }
+
+        .rank-title {
+            color: var(--neon-blue);
+            font-weight: bold;
+            font-size: 1rem;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .rank-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(0, 242, 255, .1);
+        }
+
+        .rank-item:last-child { border-bottom: none; }
+
+        .rank-num {
+            font-family: 'Bungee', cursive;
+            font-size: 1.2rem;
+            min-width: 32px;
+            text-align: center;
+        }
+
+        .rank-num.gold { color: #ffd700; text-shadow: 0 0 8px #ffd700; }
+        .rank-num.silver { color: #c0c0c0; }
+        .rank-num.bronze { color: #cd7f32; }
+
+        .rank-name { flex: 1; font-size: .9rem; font-weight: bold; }
+        .rank-count { color: var(--neon-pink); font-weight: bold; font-size: .9rem; }
+
+        .rank-bar-wrap { width: 100%; height: 6px; background: rgba(255, 255, 255, .05); border-radius: 3px; margin-top: 6px; overflow: hidden; }
+        .rank-bar { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--neon-pink), var(--neon-blue)); transition: width 1s ease-out; }
+
+        .btn-share {
+            background: #1da1f2;
+            color: #fff;
+            font-weight: bold;
+            border: none;
+            border-radius: 12px;
+            padding: .8rem 1.4rem;
+            font-size: .9rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin: 0 auto;
+            width: fit-content;
+        }
+
+        footer {
+            text-align: center;
+            color: #444;
+            font-size: 10px;
+            padding: 16px 0;
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="main-wrap">
+    <header>
+        <div class="neon-title">KANPAI-MAP</div>
+        <p class="sub-title">🍻 Nationwide Toast Party 🍻</p>
+    </header>
+
+    <div class="glass-panel">
+        <label class="input-label" for="locationInput">ドコで呑んでる？</label>
+        <input type="text" id="locationInput" class="input-neon" placeholder="例：新宿、すすきの、中洲...">
+        <button class="btn-kanpai" id="kanpaiBtn">😆 カンパーイ！ 🍻</button>
+    </div>
+
+    <p id="statusMsg" class="status-msg"></p>
+
+    <div id="shareArea" style="display:none;">
+        <button class="btn-share" id="shareBtn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+            で乾杯🍻
+        </button>
+    </div>
+
+    <div id="map-container" class="glass-panel" style="padding:8px; position:relative;">
+        <div id="map"></div>
+        <button id="resetBtn" style="position:absolute; bottom:16px; left:16px; z-index:1000; background:rgba(255,255,255,0.95); color:#111; border:1px solid #ddd; padding:6px 14px; border-radius:8px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">🇯🇵 全域表示</button>
+    </div>
+
+    <div class="glass-panel">
+        <div class="rank-title">🏆 都道府県別・本日の乾杯</div>
+        <div id="rankingList">
+            <div style="text-align:center; padding:20px; color:#555;">読み込み中...</div>
+        </div>
+    </div>
+
+    <footer>© 2026 NIGHT LIFE TECH</footer>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot, query, updateDoc, increment, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+    // 環境変数がない場合のフォールバック（GitHub Pages用などのために空の設定を防止）
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+        apiKey: "YOUR_API_KEY", // 実際にはCanvas環境で自動注入されます
+        authDomain: "YOUR_PROJECT.firebaseapp.com",
+        projectId: "YOUR_PROJECT",
+        storageBucket: "YOUR_PROJECT.appspot.com",
+        messagingSenderId: "ID",
+        appId: "APP_ID"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'kanpai-map-production';
+
+    async function loadResources() {
+        return new Promise((resolve) => {
+            const scripts = [
+                'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+                'https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js'
+            ];
+            let loaded = 0;
+            scripts.forEach(src => {
+                const s = document.createElement('script');
+                s.src = src;
+                s.onload = () => { if(++loaded === scripts.length) resolve(); };
+                document.head.appendChild(s);
+            });
+        });
+    }
+
+    let map, markers = {};
+    let currentUser = null;
+    
+    const INITIAL_VIEW = [36.0, 137.0];
+    const INITIAL_ZOOM = 5;
+
+    function getTodayKey() {
+        const d = new Date();
+        if (d.getHours() < 12) d.setDate(d.getDate() - 1);
+        return `${d.getFullYear()}${(d.getMonth() + 1).toString().padStart(2, '0')}${d.getDate().toString().padStart(2, '0')}`;
+    }
+
+    async function initAuth() {
+        try {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                await signInWithCustomToken(auth, __initial_auth_token);
+            } else {
+                await signInAnonymously(auth);
+            }
+        } catch (e) {
+            console.error("Auth Error", e);
+        }
+        
+        onAuthStateChanged(auth, (user) => {
+            currentUser = user;
+            if (user) startSync();
+        });
+    }
+
+    function initMap() {
+        map = L.map('map', { zoomControl: false }).setView(INITIAL_VIEW, INITIAL_ZOOM);
+        
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; CARTO'
+        }).addTo(map);
+
+        document.getElementById('resetBtn').onclick = () => {
+            const japanBounds = L.latLngBounds([24.0, 122.5], [45.5, 146.0]);
+            map.flyToBounds(japanBounds, { padding: [10, 10], duration: 1.5 });
+        };
+    }
+
+    function startSync() {
+        if (!currentUser) return;
+        const sessionKey = getTodayKey();
+        const collectionPath = collection(db, 'artifacts', appId, 'public', 'data', `session_${sessionKey}`);
+
+        onSnapshot(collectionPath, (snapshot) => {
+            const rawData = [];
+            snapshot.forEach(doc => {
+                const item = { id: doc.id, ...doc.data() };
+                rawData.push(item);
+                updateMarker(item);
+            });
+            aggregateAndRenderRanking(rawData);
+        }, (err) => console.error("Firestore error:", err));
+    }
+
+    function updateMarker(item) {
+        if (!map) return;
+        const { id, lat, lon, count } = item;
+        const size = 46;
+        
+        if (!markers[id]) {
+            const icon = L.divIcon({
+                className: '',
+                html: '<div class="inner-bounce">🍻</div>',
+                iconSize: [size, size],
+                iconAnchor: [size/2, size/2],
+                popupAnchor: [0, -20]
+            });
+            markers[id] = L.marker([lat, lon], { icon }).addTo(map);
+        }
+        
+        markers[id].bindPopup(`<div style="font-size:14px; text-align:center;">${id}で<br><span style="color:var(--neon-pink); font-size:22px; font-weight:800;">${count}</span>人が乾杯中！</div>`, { closeButton: false });
+    }
+
+    function aggregateAndRenderRanking(data) {
+        const list = document.getElementById('rankingList');
+        if (data.length === 0) {
+            list.innerHTML = '<div style="text-align:center; padding:20px; color:#555;">まだ乾杯されていません</div>';
+            return;
+        }
+
+        const prefStats = {};
+        data.forEach(item => {
+            const pref = item.pref || "不明な場所";
+            prefStats[pref] = (prefStats[pref] || 0) + (item.count || 1);
+        });
+
+        const sorted = Object.entries(prefStats)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count);
+
+        const max = sorted[0].count;
+        list.innerHTML = sorted.slice(0, 10).map((item, i) => {
+            const pct = (item.count / max) * 100;
+            const medal = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+            const rankLabel = i < 3 ? ['🥇','🥈','🥉'][i] : (i + 1);
+            
+            return `
+                <div class="rank-item">
+                    <span class="rank-num ${medal}">${rankLabel}</span>
+                    <div style="flex:1">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+                            <span class="rank-name">${item.name}</span>
+                            <span class="rank-count">${item.count}杯</span>
+                        </div>
+                        <div class="rank-bar-wrap">
+                            <div class="rank-bar" style="width:${pct}%"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function handleKanpai() {
+        if (!currentUser) return;
+        const q = document.getElementById('locationInput').value.trim();
+        if (!q) { showStatus('場所を入力してね！', '#ffcc00'); return; }
+        showStatus('探索中...', 'var(--neon-blue)');
+        
+        try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=jp&addressdetails=1`);
+            const results = await res.json();
+            
+            if (results.length > 0) {
+                const bestMatch = results[0];
+                const { lat, lon } = bestMatch;
+                const addr = bestMatch.address;
+                const pref = addr.province || addr.state || addr.city || "その他";
+
+                const sessionKey = getTodayKey();
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', `session_${sessionKey}`, q);
+                
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    await updateDoc(docRef, { count: increment(1), lastUpdate: serverTimestamp() });
+                } else {
+                    await setDoc(docRef, { 
+                        lat: parseFloat(lat), lon: parseFloat(lon), pref: pref, count: 1, lastUpdate: serverTimestamp() 
+                    });
+                }
+
+                map.flyTo([lat, lon], 14);
+                document.getElementById('map-container').scrollIntoView({ behavior: 'smooth', block: 'center' });
+                confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                showStatus(`${q}でカンパーイ！🎉`, 'var(--neon-pink)');
+                document.getElementById('shareArea').style.display = 'block';
+                document.getElementById('shareBtn').onclick = () => {
+                    const text = encodeURIComponent(`${q}で乾杯なう！🍻 全国のみんなとつながろう！ #KANPAIMAP`);
+                    window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
+                };
+            } else {
+                showStatus('そんな場所、見つからないよ！', '#ff4444');
+            }
+        } catch (e) {
+            showStatus('通信エラー！', '#ff4444');
+        }
+    }
+
+    function showStatus(msg, color) {
+        const el = document.getElementById('statusMsg');
+        el.textContent = msg; el.style.color = color;
+    }
+
+    window.onload = async () => {
+        await loadResources();
+        initMap();
+        await initAuth();
+        document.getElementById('kanpaiBtn').onclick = handleKanpai;
+        document.getElementById('locationInput').onkeypress = (e) => { if(e.key === 'Enter') handleKanpai(); };
+    };
+</script>
+
+</body>
+</html>
