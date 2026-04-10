@@ -94,13 +94,24 @@
 
     let map, markers = {}, currentUser = null;
 
+    // 12時でリセットするための今日の日付キーを取得（昼12時切り替え）
+    function getTodayKey() {
+        const d = new Date();
+        if (d.getHours() < 12) d.setDate(d.getDate() - 1);
+        return `${d.getFullYear()}${(d.getMonth() + 1).toString().padStart(2, '0')}${d.getDate().toString().padStart(2, '0')}`;
+    }
+
     async function init() {
         await Promise.all([
             new Promise(r => { const s = document.createElement('script'); s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; s.onload = r; document.head.appendChild(s); }),
             new Promise(r => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js'; s.onload = r; document.head.appendChild(s); })
         ]);
 
-        map = L.map('map', { zoomControl: false }).setView([36.0, 137.0], 5);
+        // 初期表示も全体が収まるように変更
+        map = L.map('map', { zoomControl: false });
+        const japanBounds = L.latLngBounds([24.0, 122.5], [45.5, 146.0]);
+        map.fitBounds(japanBounds);
+        
         L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
 
         try {
@@ -112,11 +123,19 @@
         }
 
         document.getElementById('kanpaiBtn').onclick = handleKanpai;
-        document.getElementById('resetBtn').onclick = () => map.setView([36.0, 137.0], 5);
+        
+        // 全域表示ボタンの処理を修正（北海道から沖縄まで）
+        document.getElementById('resetBtn').onclick = () => {
+            const bounds = L.latLngBounds([24.0, 122.5], [45.5, 146.0]);
+            map.flyToBounds(bounds, { padding: [10, 10], duration: 1.5 });
+        };
     }
 
     function startSync() {
-        const colRef = collection(db, 'kanpai_data');
+        // 毎日12時に新しいコレクションに切り替わる
+        const sessionKey = getTodayKey();
+        const colRef = collection(db, 'kanpai_daily', sessionKey, 'locations');
+        
         onSnapshot(colRef, (snap) => {
             const data = [];
             snap.forEach(d => {
@@ -158,10 +177,15 @@
             if(json.length > 0) {
                 const { lat, lon, address } = json[0];
                 const pref = address.province || address.state || address.city || "その他";
-                const docRef = doc(db, 'kanpai_data', q);
+                
+                // 12時リセット用のパスに書き込み
+                const sessionKey = getTodayKey();
+                const docRef = doc(db, 'kanpai_daily', sessionKey, 'locations', q);
+                
                 const snap = await getDoc(docRef);
                 if(snap.exists()) { await updateDoc(docRef, { count: increment(1) }); }
                 else { await setDoc(docRef, { lat: parseFloat(lat), lon: parseFloat(lon), pref, count: 1 }); }
+                
                 map.flyTo([lat, lon], 14);
                 confetti({ particleCount: 150, spread: 70 });
                 document.getElementById('statusMsg').innerText = q + "でカンパーイ！";
