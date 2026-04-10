@@ -5,24 +5,41 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KANPAI-MAP | どこで呑んでる？</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="shortcut icon" href="https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f37b.png">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Bungee&family=Noto+Sans+JP:wght@400;700&display=swap');
         :root { --neon-pink: #ff00ff; --neon-blue: #00f2ff; --bg-dark: #0a0a0c; --panel-bg: rgba(20, 20, 25, 0.98); }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: var(--bg-dark); color: #f0f0f0; font-family: 'Noto Sans JP', sans-serif; padding: 16px; display: flex; justify-content: center; min-height: 100vh; }
         .main-wrap { max-width: 440px; width: 100%; display: flex; flex-direction: column; gap: 16px; }
-        header { padding: 20px 0; text-align: center; }
-        .neon-title { font-family: 'Bungee', cursive; font-size: 2.2rem; color: #fff; text-shadow: 0 0 10px var(--neon-pink); }
+        header { padding: 10px 0; text-align: center; }
+        
+        /* タイトルのチカチカ（ネオンフリッカー）を復活・強化 */
+        @keyframes neon-flicker {
+            0%, 18%, 22%, 25%, 53%, 57%, 100% {
+                text-shadow: 0 0 5px #fff, 0 0 10px var(--neon-pink), 0 0 20px var(--neon-pink), 0 0 40px var(--neon-pink);
+                opacity: 1;
+            }
+            20%, 24%, 55% {
+                text-shadow: none;
+                opacity: 0.8;
+            }
+        }
+        .neon-title { font-family: 'Bungee', cursive; font-size: 2.2rem; color: #fff; animation: neon-flicker 2s infinite; }
+        
         .sub-title { font-size: .75rem; color: #888; margin-top: 4px; letter-spacing: 2px; }
         .glass-panel { background: var(--panel-bg); border: 1px solid rgba(0, 242, 255, 0.3); border-radius: 20px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
         .input-label { color: var(--neon-blue); font-size: .9rem; font-weight: bold; margin-bottom: 8px; display: block; }
         .input-neon { background: rgba(0, 0, 0, .8); border: 2px solid var(--neon-blue); color: #fff; border-radius: 12px; padding: .9rem; width: 100%; outline: none; font-size: 16px; }
         .btn-kanpai { background: linear-gradient(45deg, var(--neon-pink), #ff66ff); color: #fff; font-weight: bold; border: none; border-radius: 12px; padding: 1rem; width: 100%; font-size: 1.2rem; cursor: pointer; margin-top: 14px; }
-        #map { height: 380px; width: 100%; border-radius: 16px; background: #111; z-index: 1; margin-top: 10px; }
-        .leaflet-tile-pane { filter: invert(100%) hue-rotate(180deg) brightness(0.6) contrast(1.2); }
+        #map { height: 400px; width: 100%; border-radius: 16px; background: #111; z-index: 1; margin-top: 10px; border: 1px solid #333; }
+        
+        /* 地図の明るさを 1.8 に変更 */
+        .leaflet-tile-pane { filter: invert(100%) hue-rotate(180deg) brightness(1.8) contrast(1.1); }
         .leaflet-marker-pane, .leaflet-popup-pane { filter: none !important; }
         .leaflet-popup-content-wrapper { background: #fff !important; color: #111 !important; border: 3px solid var(--neon-pink) !important; font-weight: bold; border-radius: 12px !important; }
         .leaflet-popup-tip { background: #fff !important; }
+        
         @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-10px); } }
         .inner-bounce { font-size: 2.8rem; animation: bounce .6s infinite alternate; filter: drop-shadow(0 0 5px rgba(255,0,255,0.5)); }
         .rank-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid rgba(0, 242, 255, .1); }
@@ -40,7 +57,7 @@
         <input type="text" id="locationInput" class="input-neon" placeholder="例：新宿、すすきの、中洲...">
         <button class="btn-kanpai" id="kanpaiBtn">😆 カンパーイ！ 🍻</button>
     </div>
-    <p id="statusMsg" style="text-align:center; font-weight:bold; height:24px; margin: 10px 0;"></p>
+    <p id="statusMsg" style="text-align:center; font-weight:bold; height:24px; margin: 10px 0; color:var(--neon-pink);"></p>
     <div id="shareArea" style="display:none;">
         <button class="btn-share" id="shareBtn">X で乾杯🍻</button>
     </div>
@@ -56,10 +73,10 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot, updateDoc, increment, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot, updateDoc, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-    // --- ここをFirebaseコンソールの内容に書き換えてください ---
+    // --- ここをあなたのFirebaseコンソールの設定に書き換えてください ---
     const firebaseConfig = {
   apiKey: "AIzaSyCwexZWC3C2lYp7hdD5PWVwSRpVm1ZOIO0",
   authDomain: "kanpai-map-75855.firebaseapp.com",
@@ -69,12 +86,11 @@
   appId: "1:752717406617:web:3a913acbab0f31d1c9b308",
   measurementId: "G-2029Y5K368"
 };
-    // -------------------------------------------------------
+    // -------------------------------------------------------------
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
     const auth = getAuth(app);
-    const appId = 'kanpai-map-v1'; 
 
     let map, markers = {}, currentUser = null;
 
@@ -92,7 +108,7 @@
             currentUser = userCred.user;
             startSync();
         } catch (e) {
-            console.error("Firebase設定が必要です");
+            console.error("Firebase設定を確認してください。");
         }
 
         document.getElementById('kanpaiBtn').onclick = handleKanpai;
@@ -100,9 +116,7 @@
     }
 
     function startSync() {
-        // セッションキーなしで全データを同期（永続化のため）
         const colRef = collection(db, 'kanpai_data');
-
         onSnapshot(colRef, (snap) => {
             const data = [];
             snap.forEach(d => {
@@ -127,7 +141,7 @@
             <div class="rank-item">
                 <span class="rank-num">${i+1}</span>
                 <div style="flex:1">
-                    <div style="display:flex; justify-content:space-between;"><span>${name}</span><span style="color:#f0f">${count}杯</span></div>
+                    <div style="display:flex; justify-content:space-between;"><span>${name}</span><span style="color:#f0f">${count}人</span></div>
                     <div class="rank-bar-wrap"><div class="rank-bar" style="width:${(count/max)*100}%"></div></div>
                 </div>
             </div>`).join('');
@@ -152,7 +166,7 @@
                 confetti({ particleCount: 150, spread: 70 });
                 document.getElementById('statusMsg').innerText = q + "でカンパーイ！";
                 document.getElementById('shareArea').style.display = 'block';
-                document.getElementById('shareBtn').onclick = () => window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(q+'で乾杯！🍻 全国のみんなとつながろう！ https://fukulow.github.io/kanpai-map/ #KANPAIMAP')}`);
+                document.getElementById('shareBtn').onclick = () => window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(q+'で乾杯！🍻 全国のみんなと😆カンパ～イしよう！ https://fukulow.github.io/kanpai-map/ #KANPAIMAP')}`);
             } else {
                 document.getElementById('statusMsg').innerText = "場所が見つかりません";
             }
