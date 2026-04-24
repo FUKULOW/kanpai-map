@@ -4,8 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KANPAI-MAP | どこで呑んでる？</title>
+    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
     <link rel="shortcut icon" href="https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f37b.png">
+
+    <!-- 従来の形式でライブラリを読み込み（ローカルで動くように修正） -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Firebaseを従来の形式（Compat版）で読み込み -->
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
+
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Bungee&family=Noto+Sans+JP:wght@400;700&display=swap');
         :root { --neon-pink: #ff00ff; --neon-blue: #00f2ff; --bg-dark: #0a0a0c; --panel-bg: rgba(20, 20, 25, 0.98); }
@@ -14,69 +28,98 @@
         .main-wrap { max-width: 440px; width: 100%; display: flex; flex-direction: column; gap: 16px; }
         header { padding: 10px 0; text-align: center; }
         
-        /* タイトルのチカチカ（ネオンフリッカー）を復活・強化 */
         @keyframes neon-flicker {
-            0%, 18%, 22%, 25%, 53%, 57%, 100% {
-                text-shadow: 0 0 5px #fff, 0 0 10px var(--neon-pink), 0 0 20px var(--neon-pink), 0 0 40px var(--neon-pink);
-                opacity: 1;
-            }
-            20%, 24%, 55% {
-                text-shadow: none;
-                opacity: 0.8;
-            }
+            0%, 18%, 22%, 25%, 53%, 57%, 100% { text-shadow: 0 0 5px #fff, 0 0 10px var(--neon-pink), 0 0 20px var(--neon-pink), 0 0 40px var(--neon-pink); opacity: 1; }
+            20%, 24%, 55% { text-shadow: none; opacity: 0.8; }
         }
         .neon-title { font-family: 'Bungee', cursive; font-size: 2.2rem; color: #fff; animation: neon-flicker 2s infinite; }
+        .sub-title { font-size: .75rem; color: #888; margin-top: 4px; letter-spacing: 2px; text-align: center; }
         
-        .sub-title { font-size: .75rem; color: #888; margin-top: 4px; letter-spacing: 2px; }
         .glass-panel { background: var(--panel-bg); border: 1px solid rgba(0, 242, 255, 0.3); border-radius: 20px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
         .input-label { color: var(--neon-blue); font-size: .9rem; font-weight: bold; margin-bottom: 8px; display: block; }
         .input-neon { background: rgba(0, 0, 0, .8); border: 2px solid var(--neon-blue); color: #fff; border-radius: 12px; padding: .9rem; width: 100%; outline: none; font-size: 16px; }
-        .btn-kanpai { background: linear-gradient(45deg, var(--neon-pink), #ff66ff); color: #fff; font-weight: bold; border: none; border-radius: 12px; padding: 1rem; width: 100%; font-size: 1.2rem; cursor: pointer; margin-top: 14px; }
-        #map { height: 400px; width: 100%; border-radius: 16px; background: #111; z-index: 1; margin-top: 10px; border: 1px solid #333; }
+        .btn-kanpai { background: linear-gradient(45deg, var(--neon-pink), #ff66ff); color: #fff; font-weight: bold; border: none; border-radius: 12px; padding: 1rem; width: 100%; font-size: 1.2rem; cursor: pointer; margin-top: 14px; transition: 0.2s; }
+        .btn-kanpai:active { transform: scale(0.98); }
+
+        #totalCountMsg { text-align: center; font-family: 'Bungee', cursive; color: #fff; font-size: 1.1rem; text-shadow: 0 0 10px var(--neon-blue); margin-bottom: 4px; }
+        #statusMsg { text-align:center; font-weight:bold; height:24px; margin: 5px 0; color:var(--neon-pink); font-size: 0.9rem; }
         
-        /* 地図の明るさを 1.8 に変更 */
+        #map { height: 400px; width: 100%; border-radius: 16px; background: #111; z-index: 1; border: 1px solid #333; }
         .leaflet-tile-pane { filter: invert(100%) hue-rotate(180deg) brightness(1.8) contrast(1.1); }
-        .leaflet-marker-pane, .leaflet-popup-pane { filter: none !important; }
-        .leaflet-popup-content-wrapper { background: #fff !important; color: #111 !important; border: 3px solid var(--neon-pink) !important; font-weight: bold; border-radius: 12px !important; }
-        .leaflet-popup-tip { background: #fff !important; }
         
+        .leaflet-popup-content-wrapper { background: #fff !important; color: #111 !important; border: 3px solid var(--neon-pink) !important; font-weight: bold; border-radius: 12px !important; text-align: center; }
+        .leaflet-popup-tip { background: var(--neon-pink) !important; }
+
         @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-10px); } }
-        .inner-bounce { font-size: 2.8rem; animation: bounce .6s infinite alternate; filter: drop-shadow(0 0 5px rgba(255,0,255,0.5)); }
+        
+        .inner-bounce { font-size: 2.8rem; animation: bounce .6s infinite alternate; filter: drop-shadow(0 0 5px rgba(255,0,255,0.5)); cursor: pointer; background: transparent; }
+
+        .custom-cluster-icon {
+            display: flex !important;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: none !important;
+            border: none !important;
+        }
+        .cluster-name-label {
+            white-space: nowrap;
+            background: var(--neon-pink);
+            color: white;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: bold;
+            box-shadow: 0 0 10px var(--neon-pink);
+            margin-bottom: -5px;
+            z-index: 2;
+        }
+        .cluster-emoji { font-size: 4rem; filter: drop-shadow(0 0 10px var(--neon-pink)); z-index: 1; cursor: pointer; }
+        .cluster-count-num {
+            font-family: 'Bungee', cursive;
+            font-size: 1.8rem;
+            color: var(--neon-blue);
+            text-shadow: 0 0 5px #000, 0 0 10px var(--neon-blue), 0 0 20px var(--neon-blue);
+            margin-top: -15px;
+            z-index: 2;
+        }
+
         .rank-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid rgba(0, 242, 255, .1); }
         .rank-num { font-family: 'Bungee', cursive; font-size: 1.2rem; min-width: 32px; text-align: center; }
         .rank-bar-wrap { width: 100%; height: 6px; background: rgba(255, 255, 255, .05); border-radius: 3px; margin-top: 6px; overflow: hidden; }
         .rank-bar { height: 100%; background: linear-gradient(90deg, var(--neon-pink), var(--neon-blue)); transition: width 1s; }
-        .btn-share { background: #1da1f2; color: #fff; border: none; border-radius: 12px; padding: .8rem 1.4rem; font-size: .9rem; cursor: pointer; display: flex; align-items: center; gap: 8px; margin: 10px auto; width: fit-content; font-weight: bold;}
+        .btn-share-x { background: #000; color: #fff; border: none; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; cursor: pointer; font-weight: bold; margin-top: 8px; display: inline-block; text-decoration: none; }
     </style>
 </head>
 <body>
 <div class="main-wrap">
     <header><div class="neon-title">KANPAI-MAP</div><p class="sub-title">🍻 Nationwide Toast Party 🍻</p></header>
+    
     <div class="glass-panel">
         <label class="input-label">ドコで呑んでる？</label>
         <input type="text" id="locationInput" class="input-neon" placeholder="例：新宿、すすきの、中洲...">
         <button class="btn-kanpai" id="kanpaiBtn">😆 カンパーイ！ 🍻</button>
     </div>
-    <p id="statusMsg" style="text-align:center; font-weight:bold; height:24px; margin: 10px 0; color:var(--neon-pink);"></p>
-    <div id="shareArea" style="display:none;">
-        <button class="btn-share" id="shareBtn">X で乾杯🍻</button>
+
+    <div style="margin-top: 10px;">
+        <div id="totalCountMsg"></div>
+        <p id="statusMsg"></p>
     </div>
+
     <div id="map-container" class="glass-panel" style="padding:8px; position:relative;">
         <div id="map"></div>
-        <button id="resetBtn" style="position:absolute; bottom:16px; left:16px; z-index:1000; background:#fff; color:#111; border:1px solid #ddd; padding:6px 14px; border-radius:8px; font-size:11px; font-weight:bold; cursor:pointer;">🇯🇵 全域表示</button>
+        <button id="resetBtn" style="position:absolute; bottom:16px; left:16px; z-index:1000; background:#fff; color:#111; border:1px solid #ddd; padding:6px 14px; border-radius:8px; font-size:11px; font-weight:bold; cursor:pointer;">🇯🇵 日本全域を表示</button>
     </div>
+
     <div class="glass-panel">
         <div style="color:var(--neon-blue); font-weight:bold; margin-bottom:12px;">🏆 都道府県別ランキング</div>
         <div id="rankingList"></div>
     </div>
 </div>
 
-<script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot, updateDoc, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-
-    // --- ここをあなたのFirebaseコンソールの設定に書き換えてください ---
+<!-- module指定を外し、通常のスクリプトとして記述 -->
+<script>
+ // ★ Firebase設定をここに貼り付け
     const firebaseConfig = {
   apiKey: "AIzaSyCwexZWC3C2lYp7hdD5PWVwSRpVm1ZOIO0",
   authDomain: "kanpai-map-75855.firebaseapp.com",
@@ -86,68 +129,157 @@
   appId: "1:752717406617:web:3a913acbab0f31d1c9b308",
   measurementId: "G-2029Y5K368"
 };
-    // -------------------------------------------------------------
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const auth = getAuth(app);
+    // 地方分類用マップ
+    const prefToRegion = {
+        "北海道": "北海道",
+        "青森県": "東北", "岩手県": "東北", "宮城県": "東北", "秋田県": "東北", "山形県": "東北", "福島県": "東北",
+        "茨城県": "関東", "栃木県": "関東", "群馬県": "関東", "埼玉県": "関東", "千葉県": "関東", "東京都": "関東", "神奈川県": "関東",
+        "新潟県": "中部", "富山県": "中部", "石川県": "中部", "福井県": "中部", "山梨県": "中部", "長野県": "中部", "岐阜県": "中部", "静岡県": "中部", "愛知県": "中部",
+        "三重県": "近畿", "滋賀県": "近畿", "京都府": "近畿", "大阪府": "近畿", "兵庫県": "近畿", "奈良県": "近畿", "和歌山県": "近畿",
+        "鳥取県": "中国", "島根県": "中国", "岡山県": "中国", "広島県": "中国", "山口県": "中国",
+        "徳島県": "四国", "香川県": "四国", "愛媛県": "四国", "高知県": "四国",
+        "福岡県": "九州", "佐賀県": "九州", "長崎県": "九州", "熊本県": "九州", "大分県": "九州", "宮崎県": "九州", "鹿児島県": "九州", "沖縄県": "九州"
+    };
 
-    let map, markers = {}, currentUser = null;
+    // Firebaseの初期化（Compat形式）
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const auth = firebase.auth();
 
-    // 12時でリセットするための今日の日付キーを取得（昼12時切り替え）
+    let map, currentUser = null;
+    let rawData = [];
+    let currentMarkers = {};
+    const japanBounds = L.latLngBounds([24.0, 122.5], [45.5, 146.0]);
+
     function getTodayKey() {
         const d = new Date();
         if (d.getHours() < 12) d.setDate(d.getDate() - 1);
         return `${d.getFullYear()}${(d.getMonth() + 1).toString().padStart(2, '0')}${d.getDate().toString().padStart(2, '0')}`;
     }
 
-    async function init() {
-        await Promise.all([
-            new Promise(r => { const s = document.createElement('script'); s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; s.onload = r; document.head.appendChild(s); }),
-            new Promise(r => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js'; s.onload = r; document.head.appendChild(s); })
-        ]);
+    function getXShareUrl(locationName, count) {
+        const text = `🍻${locationName}で${count}杯目！\n全国のみんなと😆カンパ～イしよう！\n\n#KANPAIMAP\nhttps://fukulow.github.io/kanpai-map/`;
+        return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+    }
 
-        // 初期表示も全体が収まるように変更
+    async function init() {
         map = L.map('map', { zoomControl: false });
-        const japanBounds = L.latLngBounds([24.0, 122.5], [45.5, 146.0]);
         map.fitBounds(japanBounds);
-        
         L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
 
         try {
-            const userCred = await signInAnonymously(auth);
+            const userCred = await auth.signInAnonymously();
             currentUser = userCred.user;
             startSync();
-        } catch (e) {
-            console.error("Firebase設定を確認してください。");
-        }
+        } catch (e) { console.error("Firebase Auth Error:", e); }
 
         document.getElementById('kanpaiBtn').onclick = handleKanpai;
-        
-        // 全域表示ボタンの処理を修正（北海道から沖縄まで）
         document.getElementById('resetBtn').onclick = () => {
-            const bounds = L.latLngBounds([24.0, 122.5], [45.5, 146.0]);
-            map.flyToBounds(bounds, { padding: [10, 10], duration: 1.5 });
+            map.flyToBounds(japanBounds, { padding:[10, 10], duration: 1.5 });
         };
     }
 
     function startSync() {
-        // 毎日12時に新しいコレクションに切り替わる
         const sessionKey = getTodayKey();
-        const colRef = collection(db, 'kanpai_daily', sessionKey, 'locations');
+        const colRef = db.collection('kanpai_daily').doc(sessionKey).collection('locations');
         
-        onSnapshot(colRef, (snap) => {
-            const data = [];
+        colRef.onSnapshot((snap) => {
+            let totalCheers = 0;
+            rawData =[];
             snap.forEach(d => {
                 const item = { id: d.id, ...d.data() };
-                data.push(item);
-                if (!markers[item.id]) {
-                    const icon = L.divIcon({ className: '', html: '<div class="inner-bounce">🍻</div>', iconSize: [46, 46], iconAnchor: [23, 23], popupAnchor: [0, -20] });
-                    markers[item.id] = L.marker([item.lat, item.lon], { icon }).addTo(map);
-                }
-                markers[item.id].bindPopup(`<div style="text-align:center;">${item.id}で<br><span style="color:#f0f; font-size:20px;">${item.count}</span>人が乾杯中！</div>`);
+                rawData.push(item);
+                totalCheers += item.count;
             });
-            renderRanking(data);
+            document.getElementById('totalCountMsg').innerText = `本日 ${totalCheers}杯目のCheers！`;
+            renderRanking(rawData);
+            renderMarkers(); 
+        });
+
+        map.on('zoomend', renderMarkers);
+    }
+
+    function renderMarkers() {
+        Object.values(currentMarkers).forEach(m => map.removeLayer(m));
+        currentMarkers = {};
+
+        const z = map.getZoom();
+        let mode = 'individual';
+        
+        if (z <= 5) mode = 'national';          
+        else if (z === 6) mode = 'regional';    
+        else if (z <= 8) mode = 'prefectural';  
+
+        const grouped = {};
+        rawData.forEach(item => {
+            let key = item.id;
+            let label = item.id;
+            let type = 'individual';
+
+            if (mode === 'national') {
+                key = 'national'; label = '日本全国'; type = 'national';
+            } else if (mode === 'regional') {
+                const region = prefToRegion[item.pref] || "その他";
+                key = region; label = region + (region !== "その他" ? "地方" : ""); type = 'regional';
+            } else if (mode === 'prefectural') {
+                key = item.pref; label = item.pref; type = 'prefectural';
+            }
+
+            if (!grouped[key]) {
+                grouped[key] = { label: label, count: item.count, lat: item.lat, lon: item.lon, maxCount: item.count, type: type };
+            } else {
+                grouped[key].count += item.count;
+                if (item.count > grouped[key].maxCount) {
+                    grouped[key].maxCount = item.count;
+                    grouped[key].lat = item.lat;
+                    grouped[key].lon = item.lon;
+                }
+            }
+        });
+
+        Object.keys(grouped).forEach(key => {
+            const g = grouped[key];
+            let iconHtml = '';
+            let iconSize, iconAnchor, popupAnchor;
+
+            if (g.type === 'individual') {
+                iconHtml = `<div class="inner-bounce">🍻</div>`;
+                iconSize = [46, 46]; iconAnchor =[23, 23]; popupAnchor = [0, -25];
+            } else {
+                iconHtml = `
+                    <div class="cluster-name-label">${g.label}</div>
+                    <div class="cluster-emoji">🍻</div>
+                    <div class="cluster-count-num">${g.count}</div>
+                `;
+                iconSize = [80, 80]; iconAnchor =[40, 40]; popupAnchor = [0, -40];
+            }
+
+            const icon = L.divIcon({
+                html: iconHtml,
+                className: g.type === 'individual' ? '' : 'custom-cluster-icon',
+                iconSize: iconSize, iconAnchor: iconAnchor, popupAnchor: popupAnchor
+            });
+
+            const marker = L.marker([g.lat, g.lon], { icon: icon });
+            
+            if (g.type === 'individual') {
+                const popupHtml = `<div style="font-size:1.1rem;">${g.label}で<br><span style="color:#f0f;font-size:1.4rem;">${g.count}</span>杯目！</div><a href="${getXShareUrl(g.label, g.count)}" target="_blank" class="btn-share-x">𝕏 でCheers！</a>`;
+                marker.bindPopup(popupHtml);
+                marker.on('click', function() { this.openPopup(); });
+                marker.on('mouseover', function() { this.openPopup(); });
+            } else {
+                marker.on('click', () => {
+                    let nextZoom = map.getZoom() + 2;
+                    if (g.type === 'national') nextZoom = 6;
+                    else if (g.type === 'regional') nextZoom = 8;
+                    else if (g.type === 'prefectural') nextZoom = 10;
+                    map.flyTo([g.lat, g.lon], nextZoom, { duration: 0.8 });
+                });
+            }
+
+            marker.addTo(map);
+            currentMarkers[key] = marker; 
         });
     }
 
@@ -157,46 +289,37 @@
         const sorted = Object.entries(stats).sort((a, b) => b[1] - a[1]).slice(0, 10);
         const max = sorted[0]?.[1] || 1;
         document.getElementById('rankingList').innerHTML = sorted.map(([name, count], i) => `
-            <div class="rank-item">
-                <span class="rank-num">${i+1}</span>
-                <div style="flex:1">
-                    <div style="display:flex; justify-content:space-between;"><span>${name}</span><span style="color:#f0f">${count}人</span></div>
-                    <div class="rank-bar-wrap"><div class="rank-bar" style="width:${(count/max)*100}%"></div></div>
-                </div>
-            </div>`).join('');
+            <div class="rank-item"><span class="rank-num">${i+1}</span><div style="flex:1"><div style="display:flex; justify-content:space-between;"><span>${name}</span><span style="color:var(--neon-pink)">${count}人</span></div><div class="rank-bar-wrap"><div class="rank-bar" style="width:${(count/max)*100}%"></div></div></div></div>`).join('');
     }
 
     async function handleKanpai() {
         const q = document.getElementById('locationInput').value.trim();
         if(!q || !currentUser) return;
         document.getElementById('statusMsg').innerText = "探索中...";
-        
         try {
             const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=jp&addressdetails=1`);
             const json = await res.json();
             if(json.length > 0) {
                 const { lat, lon, address } = json[0];
                 const pref = address.province || address.state || address.city || "その他";
-                
-                // 12時リセット用のパスに書き込み
                 const sessionKey = getTodayKey();
-                const docRef = doc(db, 'kanpai_daily', sessionKey, 'locations', q);
+                const docRef = db.collection('kanpai_daily').doc(sessionKey).collection('locations').doc(q);
                 
-                const snap = await getDoc(docRef);
-                if(snap.exists()) { await updateDoc(docRef, { count: increment(1) }); }
-                else { await setDoc(docRef, { lat: parseFloat(lat), lon: parseFloat(lon), pref, count: 1 }); }
+                const snap = await docRef.get();
+                if(snap.exists) { 
+                    await docRef.update({ count: firebase.firestore.FieldValue.increment(1) }); 
+                } else { 
+                    await docRef.set({ lat: parseFloat(lat), lon: parseFloat(lon), pref: pref, count: 1 }); 
+                }
                 
-                map.flyTo([lat, lon], 14);
-                confetti({ particleCount: 150, spread: 70 });
-                document.getElementById('statusMsg').innerText = q + "でカンパーイ！";
-                document.getElementById('shareArea').style.display = 'block';
-                document.getElementById('shareBtn').onclick = () => window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(q+'で乾杯！🍻 全国のみんなと😆カンパ～イしよう！ https://fukulow.github.io/kanpai-map/ #KANPAIMAP')}`);
-            } else {
-                document.getElementById('statusMsg').innerText = "場所が見つかりません";
-            }
-        } catch (e) {
-            document.getElementById('statusMsg').innerText = "エラーが発生しました";
-        }
+                map.flyTo([lat, lon], 12, { duration: 1.5 });
+                confetti({ particleCount: 150, spread: 70, origin: { y: 0.7 } });
+                document.getElementById('statusMsg').innerText = q + "でCheers！";
+                
+                setTimeout(() => { if(currentMarkers[q]) currentMarkers[q].openPopup(); }, 1500);
+                document.getElementById('locationInput').value = "";
+            } else { document.getElementById('statusMsg').innerText = "場所が見つかりません"; }
+        } catch (e) { document.getElementById('statusMsg').innerText = "エラー"; }
     }
     init();
 </script>
